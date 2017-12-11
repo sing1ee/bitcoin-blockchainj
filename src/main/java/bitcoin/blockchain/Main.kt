@@ -2,12 +2,9 @@ package bitcoin.blockchain
 
 import com.xenomachina.argparser.ArgParser
 import org.bitcoinj.core.*
-import org.bitcoinj.core.Block
-import org.bitcoinj.core.Transaction
 import org.bitcoinj.params.MainNetParams
 import org.bitcoinj.utils.BlockFileLoader
 import org.jetbrains.exposed.sql.batchInsert
-import org.jetbrains.exposed.sql.insert
 import java.io.File
 import java.nio.file.Files
 import java.util.stream.Collectors
@@ -16,17 +13,53 @@ import java.text.SimpleDateFormat
 
 class Main {
 
+    class Tx {
+        var blockHash: String? = null
+        var txHash: String? = null
+        var isCoinbase: Boolean? = false
+    }
+
     companion object {
 
         @JvmStatic fun main(args: Array<String>) {
 
-            fun batchInsert(blkBuf: MutableList<Block>,
-                            txBuf: MutableList<Transaction>,
+            connectDB()
+            val np: NetworkParameters = MainNetParams()
+
+            fun batchInsert(blkBuf: MutableList<org.bitcoinj.core.Block>,
+                            txBuf: MutableList<Tx>,
                             txInBuf: MutableList<TransactionInput>,
                             txOutBuf: MutableList<TransactionOutput>) {
 
-                bitcoin.blockchain.Block.batchInsert(blkBuf, body = {
+                Block.batchInsert(blkBuf, body = {
 
+                    this[Block.hash] = it.hashAsString
+                    this[Block.difficultyTarget] = it.difficultyTarget
+                    this[Block.merkleRoot] = it.merkleRoot.toString()
+                    this[Block.nonce] = it.nonce
+                    this[Block.prevBlockHash] = it.prevBlockHash.toString()
+                    this[Block.time] = it.time.time
+                    this[Block.version] = it.version
+                })
+
+                Transaction.batchInsert(txBuf, body = {
+
+                    this[Transaction.blockHash] = it.blockHash!!
+                    this[Transaction.txHash] = it.txHash!!
+                    this[Transaction.isCoinbase] = it.isCoinbase
+
+                })
+
+                TxInput.batchInsert(txInBuf, body = {
+                    this[TxInput.address] = it.fromAddress.toBase58()
+                    this[TxInput.txHash] = it.parentTransaction.hashAsString
+
+                })
+
+                TxOutput.batchInsert(txOutBuf, body = {
+                    this[TxOutput.address] = it.scriptPubKey.getToAddress(np).toBase58()
+                    this[TxOutput.coinValue] = it.value.value
+                    this[TxOutput.txHash] = it.parentTransaction!!.hashAsString
                 })
 
                 blkBuf.clear()
@@ -41,7 +74,6 @@ class Main {
                 return
             }
             val blocksDir = argParser.blocksDir
-            val np: NetworkParameters = MainNetParams()
             Context.getOrCreate(MainNetParams.get());
             val blockChainList = Files.list(File(blocksDir).toPath()).filter {
                 val name = it.toFile().name
@@ -54,24 +86,25 @@ class Main {
             var cnt = 0
 
 
-            val blkBuf = mutableListOf<Block>()
-            val txBuf = mutableListOf<Transaction>()
+            val blkBuf = mutableListOf<org.bitcoinj.core.Block>()
+            val txBuf = mutableListOf<Tx>()
             val txInBuf = mutableListOf<TransactionInput>()
             val txOutBuf = mutableListOf<TransactionOutput>()
-            loader.forEach {
+            loader.forEach { blk ->
                 cnt += 1
                 val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss E")
-                blkBuf.add(it)
-                println("blk: ${it.hash} AT ${df.format(it.time)}")
+                blkBuf.add(blk)
+                println("blk: ${blk.hash} AT ${df.format(blk.time)}")
 
-                bitcoin.blockchain.Block.insert {
-
-                }
-                it.transactions!!.forEach{
+                blk.transactions!!.forEach{
                     println("tx: ${it.hash} coinbase: ${it.isCoinBase}")
-                    txBuf.add(it)
+                    val tx = Tx()
+                    tx.blockHash = blk.hashAsString
+                    tx.txHash = it.hashAsString
+                    tx.isCoinbase = it.isCoinBase
+                    txBuf.add(tx)
                     it.inputs.forEach {
-                        println(it.parentTransaction.hashAsString)
+//                        println(it.parentTransaction.hashAsString)
                         if (!it.isCoinBase) {
 
                             txInBuf.add(it)
@@ -81,7 +114,7 @@ class Main {
                                 e.printStackTrace()
                                 null
                             }
-                            println("input: $address")
+//                            println("input: $address")
                         }
                     }
                     it.outputs.forEach {
@@ -93,7 +126,7 @@ class Main {
                             e.printStackTrace()
                             null
                         }
-                        println("ouput: $address amount: ${it.value}")
+//                        println("ouput: $address amount: ${it.value}")
                     }
                 }
 
