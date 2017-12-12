@@ -38,16 +38,16 @@ object Transaction: Table("tx") {
 object TxInput: Table("tx_input") {
 
     val id = integer("id").autoIncrement().primaryKey()
-    val txHash = varchar("tx_hash", 64).index()
-    val address = varchar("address", 58).index()
-    val coinValue = long("coin")
+    val txHash = varchar("tx_hash", 64)
+    val address = varchar("address", 58)
+    val coinValue = long("coin").nullable()
 }
 
 object TxOutput: Table("tx_output") {
 
     val id = integer("id").autoIncrement().primaryKey()
-    val txHash = varchar("tx_hash", 64).index()
-    val address = varchar("address", 58).index()
+    val txHash = varchar("tx_hash", 64)
+    val address = varchar("address", 58)
     val coinValue = long("coin")
 }
 
